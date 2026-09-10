@@ -8,6 +8,11 @@
   <!-- ========== CDN Dependencies ========== -->
   <script src="https://unpkg.com/tesseract.js@v4.0.1/dist/tesseract.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    // Point PDF.js to its worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  </script>
 
   <style>
     /* ===================================================================
@@ -135,7 +140,20 @@
     }
 
     #fileInput {
-      display: none;
+      /* Visually hidden but still accessible to the <label> click */
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .upload-area {
+      display: block; /* <label> is inline by default */
     }
 
     .upload-btn {
@@ -424,15 +442,18 @@
     <!-- ---- Upload Section ---- -->
     <section>
       <h2><span class="icon">📁</span> Upload Trading Screenshots</h2>
-      <!-- Hidden file input lives OUTSIDE the clickable area to prevent event conflicts -->
-      <input type="file" id="fileInput" multiple accept=".png,.jpg,.jpeg,image/png,image/jpeg" />
 
-      <div class="upload-area" id="uploadArea">
+      <!--
+        Using a <label> wrapping the input is the most reliable way to trigger
+        the file picker — it's native browser behaviour and cannot be blocked.
+      -->
+      <label for="fileInput" class="upload-area" id="uploadArea">
         <div class="big-icon">📷</div>
         <strong>Drop Dime app screenshots here</strong>
-        <p>or click to browse · supports multiple PNG / JPG images</p>
-        <button class="upload-btn" id="browseBtn">Choose Files</button>
-      </div>
+        <p>or click to browse · PNG, JPG &amp; PDF supported</p>
+        <span class="upload-btn" role="button">Choose Files</span>
+        <input type="file" id="fileInput" multiple accept=".png,.jpg,.jpeg,.pdf,image/png,image/jpeg,application/pdf" />
+      </label>
     </section>
 
     <!-- ---- Recent Extractions ---- -->
@@ -485,7 +506,6 @@
     // =================================================================
     const uploadArea       = document.getElementById('uploadArea');
     const fileInput        = document.getElementById('fileInput');
-    const browseBtn        = document.getElementById('browseBtn');
     const processingModal  = document.getElementById('processingModal');
     const statusText       = document.getElementById('statusText');
     const progressBar      = document.getElementById('progressBar');
@@ -496,19 +516,9 @@
 
     // =================================================================
     //  Upload Area – Events
+    //  The <label for="fileInput"> handles click→file-picker natively.
+    //  We only need drag-and-drop + change handlers here.
     // =================================================================
-    browseBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      fileInput.click();
-    });
-
-    uploadArea.addEventListener('click', (e) => {
-      // Only trigger if the click is not on the button itself
-      if (e.target.closest('#browseBtn')) return;
-      e.preventDefault();
-      fileInput.click();
-    });
 
     uploadArea.addEventListener('dragover', (e) => {
       e.preventDefault();
@@ -670,32 +680,104 @@
     }
 
     // =================================================================
+    //  PDF → Image conversion helper
+    //  Renders each page of a PDF to a canvas and returns an array of
+    //  Blob objects (PNG images) suitable for Tesseract.
+    // =================================================================
+    async function pdfToImages(file) {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const images = [];
+
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const scale = 2; // higher scale = better OCR accuracy
+        const viewport = page.getViewport({ scale });
+
+        const canvas = document.createElement('canvas');
+        canvas.width  = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d');
+
+        await page.render({ canvasContext: ctx, viewport }).promise;
+
+        // Convert canvas to Blob
+        const blob = await new Promise(resolve =>
+          canvas.toBlob(resolve, 'image/png')
+        );
+        blob.name = `${file.name} — page ${p}`;
+        images.push(blob);
+      }
+
+      return images;
+    }
+
+    // =================================================================
     //  OCR Processing Queue
+    //  Accepts images (PNG/JPG) and PDFs. PDFs are first converted to
+    //  per-page images via PDF.js, then all images are OCR'd sequentially.
     // =================================================================
     async function handleFiles(files) {
-      const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
-      if (!imageFiles.length) {
-        showToast('No image files selected.', 'error');
+      const allFiles = Array.from(files);
+
+      // Separate images and PDFs
+      const imageFiles = allFiles.filter(f => f.type.startsWith('image/'));
+      const pdfFiles   = allFiles.filter(f => f.type === 'application/pdf');
+      const skipped    = allFiles.filter(f => !f.type.startsWith('image/') && f.type !== 'application/pdf');
+
+      if (!imageFiles.length && !pdfFiles.length) {
+        showToast('No supported files selected. Use PNG, JPG, or PDF.', 'error');
         return;
       }
 
+      if (skipped.length) {
+        showToast(`Skipped ${skipped.length} unsupported file(s).`, 'error');
+      }
+
       openModal();
-      setProgress(0, 'Initializing OCR engine…');
+      setProgress(0, 'Preparing files…');
 
+      // ---- Build a flat list of OCR-ready image blobs ----
+      const ocrItems = []; // { blob, label }
+
+      // Add image files directly
+      for (const img of imageFiles) {
+        ocrItems.push({ blob: img, label: img.name });
+      }
+
+      // Convert each PDF to page images
+      for (let i = 0; i < pdfFiles.length; i++) {
+        setProgress(0, `Converting PDF ${i + 1} of ${pdfFiles.length}: ${pdfFiles[i].name}…`);
+        try {
+          const pageImages = await pdfToImages(pdfFiles[i]);
+          for (const pi of pageImages) {
+            ocrItems.push({ blob: pi, label: pi.name || pdfFiles[i].name });
+          }
+        } catch (err) {
+          console.error(`PDF conversion failed for ${pdfFiles[i].name}:`, err);
+          showToast(`Failed to read PDF: ${pdfFiles[i].name}`, 'error');
+        }
+      }
+
+      if (!ocrItems.length) {
+        closeModal();
+        showToast('No processable pages found.', 'error');
+        return;
+      }
+
+      // ---- Create Tesseract worker ----
+      const total = ocrItems.length;
       const results = [];
-      const total = imageFiles.length;
-
-      // Create a Tesseract worker (reuse for the whole batch)
       let worker;
+
       try {
         worker = await Tesseract.createWorker('eng', 1, {
           logger: (info) => {
             if (info.status === 'recognizing text') {
-              // Compute combined progress across all images
               const imgPct = info.progress || 0;
               const currentIdx = results.length;
               const overallPct = ((currentIdx + imgPct) / total) * 100;
-              setProgress(overallPct, `Recognizing image ${currentIdx + 1} of ${total}… (${Math.round(imgPct * 100)}%)`);
+              setProgress(overallPct, `Recognizing ${currentIdx + 1} of ${total}… (${Math.round(imgPct * 100)}%)`);
             }
           },
         });
@@ -706,39 +788,37 @@
         return;
       }
 
-      for (let i = 0; i < imageFiles.length; i++) {
-        const file = imageFiles[i];
-        setProgress((i / total) * 100, `Processing image ${i + 1} of ${total}: ${file.name}`);
+      // ---- OCR each image sequentially ----
+      for (let i = 0; i < ocrItems.length; i++) {
+        const { blob, label } = ocrItems[i];
+        setProgress((i / total) * 100, `Processing ${i + 1} of ${total}: ${label}`);
 
         try {
-          const { data: { text } } = await worker.recognize(file);
+          const { data: { text } } = await worker.recognize(blob);
           const extracted = extractTradeData(text);
 
-          // Validate minimum viable data
           if (extracted.action && extracted.symbol && extracted.amount !== null) {
             results.push(extracted);
             addExtractionEntry(extracted);
           } else {
-            addExtractionEntry(null, file.name, text);
+            addExtractionEntry(null, label, text);
           }
         } catch (err) {
-          console.error(`OCR failed for ${file.name}:`, err);
-          addExtractionEntry(null, file.name);
+          console.error(`OCR failed for ${label}:`, err);
+          addExtractionEntry(null, label);
         }
       }
 
-      // Terminate the worker
       await worker.terminate();
 
       setProgress(100, 'OCR complete. Syncing with database…');
 
-      // Insert into Supabase
       if (results.length) {
         await insertTransactions(results);
       }
 
       closeModal();
-      showToast(`Processed ${total} image(s). ${results.length} transaction(s) extracted.`);
+      showToast(`Processed ${total} page(s). ${results.length} transaction(s) extracted.`);
 
       // Reset file input so the same files can be re-uploaded if needed
       fileInput.value = '';
