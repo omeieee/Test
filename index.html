@@ -424,11 +424,13 @@
     <!-- ---- Upload Section ---- -->
     <section>
       <h2><span class="icon">📁</span> Upload Trading Screenshots</h2>
+      <!-- Hidden file input lives OUTSIDE the clickable area to prevent event conflicts -->
+      <input type="file" id="fileInput" multiple accept=".png,.jpg,.jpeg,image/png,image/jpeg" />
+
       <div class="upload-area" id="uploadArea">
         <div class="big-icon">📷</div>
         <strong>Drop Dime app screenshots here</strong>
-        <p>or click to browse · supports multiple images</p>
-        <input type="file" id="fileInput" multiple accept="image/*" />
+        <p>or click to browse · supports multiple PNG / JPG images</p>
         <button class="upload-btn" id="browseBtn">Choose Files</button>
       </div>
     </section>
@@ -472,8 +474,8 @@
     // =================================================================
     //  CONFIGURATION — Replace with your own Supabase credentials
     // =================================================================
-    const SUPABASE_URL  = 'YOUR_SUPABASE_URL';
-    const SUPABASE_KEY  = 'YOUR_SUPABASE_ANON_KEY';
+    const SUPABASE_URL  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im16eHdnYmFzeHNldWt5Y3VkeGJ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg4NjIxMTksImV4cCI6MjEwNDQzODExOX0.U415rgYrpyec0oE0H-XV1QXOlCmdAGCokDlPdx_MfG4';
+    const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im16eHdnYmFzeHNldWt5Y3VkeGJ2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODg2MjExOSwiZXhwIjoyMTA0NDM4MTE5fQ.r79Pyz7UkWh4txbWwPfFQ8wVzhr4WfLvf7tv6KuqLXs';
 
     // Initialize Supabase client
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -496,11 +498,17 @@
     //  Upload Area – Events
     // =================================================================
     browseBtn.addEventListener('click', (e) => {
+      e.preventDefault();
       e.stopPropagation();
       fileInput.click();
     });
 
-    uploadArea.addEventListener('click', () => fileInput.click());
+    uploadArea.addEventListener('click', (e) => {
+      // Only trigger if the click is not on the button itself
+      if (e.target.closest('#browseBtn')) return;
+      e.preventDefault();
+      fileInput.click();
+    });
 
     uploadArea.addEventListener('dragover', (e) => {
       e.preventDefault();
