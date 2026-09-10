@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stock Tax Calculator</title>
+
+  <!-- ========== CDN Dependencies ========== -->
+  <script src="https://unpkg.com/tesseract.js@v4.0.1/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+  <style>
+    /* ===================================================================
+       CSS – Dark-Mode Interface
+       =================================================================== */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg-primary: #0f1117;
+      --bg-secondary: #1a1d27;
+      --bg-card: #21242f;
+      --bg-card-hover: #282c3a;
+      --accent: #6c63ff;
+      --accent-light: #8b83ff;
+      --green: #00d68f;
+      --red: #ff6b6b;
+      --yellow: #ffd93d;
+      --text-primary: #e8e8ee;
+      --text-secondary: #9ea0ab;
+      --border: #2e3140;
+      --radius: 12px;
+      --shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* ---------- Header ---------- */
+    header {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      backdrop-filter: blur(12px);
+    }
+
+    header h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), var(--accent-light));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    header .badge {
+      font-size: 0.7rem;
+      background: var(--accent);
+      color: #fff;
+      padding: 3px 10px;
+      border-radius: 20px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    /* ---------- Main Layout ---------- */
+    main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 4rem;
+    }
+
+    section {
+      margin-bottom: 2.5rem;
+    }
+
+    section > h2 {
+      font-size: 1.15rem;
+      color: var(--text-secondary);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    section > h2 .icon {
+      font-size: 1.3rem;
+    }
+
+    /* ---------- Upload Area ---------- */
+    .upload-area {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 3rem 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.3s, background 0.3s;
+      background: var(--bg-secondary);
+    }
+
+    .upload-area:hover,
+    .upload-area.dragover {
+      border-color: var(--accent);
+      background: rgba(108, 99, 255, 0.06);
+    }
+
+    .upload-area p {
+      color: var(--text-secondary);
+      margin-top: 0.5rem;
+      font-size: 0.92rem;
+    }
+
+    .upload-area .big-icon {
+      font-size: 2.8rem;
+      margin-bottom: 0.5rem;
+    }
+
+    #fileInput {
+      display: none;
+    }
+
+    .upload-btn {
+      display: inline-block;
+      margin-top: 1rem;
+      padding: 0.6rem 1.8rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .upload-btn:hover {
+      background: var(--accent-light);
+    }
+
+    /* ---------- Modal / Overlay ---------- */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+
+    .modal-overlay.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-box {
+      background: var(--bg-card);
+      padding: 2.5rem 3rem;
+      border-radius: var(--radius);
+      text-align: center;
+      max-width: 420px;
+      width: 90%;
+      box-shadow: var(--shadow);
+    }
+
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 1.2rem;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .modal-box h3 {
+      font-size: 1.1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    #statusText {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+
+    .progress-bar-container {
+      width: 100%;
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      margin-top: 1rem;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 3px;
+      width: 0%;
+      transition: width 0.3s;
+    }
+
+    /* ---------- Recent Extractions ---------- */
+    .extraction-log {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .extraction-item {
+      background: var(--bg-card);
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.9rem;
+      border-left: 3px solid var(--accent);
+    }
+
+    .extraction-item.buy { border-left-color: var(--green); }
+    .extraction-item.sell { border-left-color: var(--red); }
+    .extraction-item.error { border-left-color: var(--yellow); }
+
+    .extraction-item .tag {
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .tag.buy { background: rgba(0, 214, 143, 0.15); color: var(--green); }
+    .tag.sell { background: rgba(255, 107, 107, 0.15); color: var(--red); }
+    .tag.error-tag { background: rgba(255, 217, 61, 0.15); color: var(--yellow); }
+
+    /* ---------- Dashboard ---------- */
+    .year-group {
+      margin-bottom: 2rem;
+    }
+
+    .year-header {
+      font-size: 1.3rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .year-header .tax-badge {
+      font-size: 0.78rem;
+      background: rgba(108, 99, 255, 0.15);
+      color: var(--accent-light);
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+
+    .summary-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .summary-card {
+      background: var(--bg-card);
+      border-radius: var(--radius);
+      padding: 1.2rem 1.4rem;
+      border: 1px solid var(--border);
+      transition: background 0.2s;
+    }
+
+    .summary-card:hover {
+      background: var(--bg-card-hover);
+    }
+
+    .summary-card .label {
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 0.35rem;
+    }
+
+    .summary-card .value {
+      font-size: 1.45rem;
+      font-weight: 700;
+    }
+
+    .summary-card .value.green { color: var(--green); }
+    .summary-card .value.red { color: var(--red); }
+    .summary-card .value.accent { color: var(--accent-light); }
+
+    /* Month table */
+    .month-table-wrapper {
+      overflow-x: auto;
+    }
+
+    .month-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .month-table thead th {
+      text-align: left;
+      color: var(--text-secondary);
+      font-weight: 600;
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    .month-table tbody td {
+      padding: 0.55rem 1rem;
+      border-bottom: 1px solid rgba(46, 49, 64, 0.4);
+      white-space: nowrap;
+    }
+
+    .month-table tbody tr:hover {
+      background: var(--bg-card-hover);
+    }
+
+    .month-label {
+      font-weight: 600;
+      font-size: 0.95rem;
+      margin-top: 0.75rem;
+      margin-bottom: 0.35rem;
+      color: var(--accent-light);
+    }
+
+    /* ---------- Empty State ---------- */
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--text-secondary);
+    }
+
+    .empty-state .big-icon {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    /* ---------- Toast ---------- */
+    .toast-container {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .toast {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      padding: 0.75rem 1.2rem;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      box-shadow: var(--shadow);
+      animation: slideIn 0.3s ease-out;
+      max-width: 340px;
+    }
+
+    .toast.success { border-left: 3px solid var(--green); }
+    .toast.error { border-left: 3px solid var(--red); }
+
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    /* ---------- Responsive ---------- */
+    @media (max-width: 600px) {
+      header { padding: 0.75rem 1rem; }
+      main { padding: 1.25rem 1rem 3rem; }
+      .modal-box { padding: 2rem 1.5rem; }
+      .summary-cards { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ==================== Header ==================== -->
+  <header>
+    <h1>📊 Stock Tax Calculator</h1>
+    <span class="badge">Serverless · Client-Side</span>
+  </header>
+
+  <!-- ==================== Main ==================== -->
+  <main>
+
+    <!-- ---- Upload Section ---- -->
+    <section>
+      <h2><span class="icon">📁</span> Upload Trading Screenshots</h2>
+      <div class="upload-area" id="uploadArea">
+        <div class="big-icon">📷</div>
+        <strong>Drop Dime app screenshots here</strong>
+        <p>or click to browse · supports multiple images</p>
+        <input type="file" id="fileInput" multiple accept="image/*" />
+        <button class="upload-btn" id="browseBtn">Choose Files</button>
+      </div>
+    </section>
+
+    <!-- ---- Recent Extractions ---- -->
+    <section id="extractionSection" style="display:none;">
+      <h2><span class="icon">🧾</span> Recent Extractions</h2>
+      <div class="extraction-log" id="extractionLog"></div>
+    </section>
+
+    <!-- ---- Dashboard ---- -->
+    <section>
+      <h2><span class="icon">📈</span> Dashboard &amp; Tax Overview</h2>
+      <div id="dashboard">
+        <div class="empty-state">
+          <div class="big-icon">🗂️</div>
+          <p>No data yet. Upload screenshots to get started.</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==================== Processing Modal ==================== -->
+  <div class="modal-overlay" id="processingModal">
+    <div class="modal-box">
+      <div class="spinner"></div>
+      <h3>Processing Images…</h3>
+      <p id="statusText">Initializing OCR engine…</p>
+      <div class="progress-bar-container">
+        <div class="progress-bar-fill" id="progressBar"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== Toast Container ==================== -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- ==================== JavaScript ==================== -->
+  <script>
+    // =================================================================
+    //  CONFIGURATION — Replace with your own Supabase credentials
+    // =================================================================
+    const SUPABASE_URL  = 'YOUR_SUPABASE_URL';
+    const SUPABASE_KEY  = 'YOUR_SUPABASE_ANON_KEY';
+
+    // Initialize Supabase client
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // =================================================================
+    //  DOM References
+    // =================================================================
+    const uploadArea       = document.getElementById('uploadArea');
+    const fileInput        = document.getElementById('fileInput');
+    const browseBtn        = document.getElementById('browseBtn');
+    const processingModal  = document.getElementById('processingModal');
+    const statusText       = document.getElementById('statusText');
+    const progressBar      = document.getElementById('progressBar');
+    const extractionLog    = document.getElementById('extractionLog');
+    const extractionSection = document.getElementById('extractionSection');
+    const dashboard        = document.getElementById('dashboard');
+    const toastContainer   = document.getElementById('toastContainer');
+
+    // =================================================================
+    //  Upload Area – Events
+    // =================================================================
+    browseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fileInput.click();
+    });
+
+    uploadArea.addEventListener('click', () => fileInput.click());
+
+    uploadArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadArea.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', () => {
+      uploadArea.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadArea.classList.remove('dragover');
+      if (e.dataTransfer.files.length) {
+        handleFiles(e.dataTransfer.files);
+      }
+    });
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) {
+        handleFiles(fileInput.files);
+      }
+    });
+
+    // =================================================================
+    //  Toast Helper
+    // =================================================================
+    function showToast(message, type = 'success') {
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      toastContainer.appendChild(toast);
+      setTimeout(() => toast.remove(), 4500);
+    }
+
+    // =================================================================
+    //  Modal Helpers
+    // =================================================================
+    function openModal() {
+      processingModal.classList.add('visible');
+    }
+
+    function closeModal() {
+      processingModal.classList.remove('visible');
+    }
+
+    function setProgress(pct, text) {
+      progressBar.style.width = `${pct}%`;
+      if (text) statusText.textContent = text;
+    }
+
+    // =================================================================
+    //  Date Parsing Utility
+    //  Converts strings like "2 Sep 2026" → "2026-09-02"
+    // =================================================================
+    const MONTH_MAP = {
+      jan: '01', feb: '02', mar: '03', apr: '04',
+      may: '05', jun: '06', jul: '07', aug: '08',
+      sep: '09', oct: '10', nov: '11', dec: '12',
+      // Handle full month names too
+      january: '01', february: '02', march: '03', april: '04',
+      june: '06', july: '07', august: '08',
+      september: '09', october: '10', november: '11', december: '12',
+    };
+
+    function parseDateString(raw) {
+      // Accept: "2 Sep 2026", "02 September 2026", "12/09/2026", etc.
+      const trimmed = raw.trim();
+
+      // Pattern A – "2 Sep 2026" / "02 September 2026"
+      const patternA = /(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/;
+      let m = trimmed.match(patternA);
+      if (m) {
+        const day   = m[1].padStart(2, '0');
+        const month = MONTH_MAP[m[2].toLowerCase()];
+        const year  = m[3];
+        if (month) return `${year}-${month}-${day}`;
+      }
+
+      // Pattern B – "Sep 2, 2026" / "September 2, 2026"
+      const patternB = /([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})/;
+      m = trimmed.match(patternB);
+      if (m) {
+        const month = MONTH_MAP[m[1].toLowerCase()];
+        const day   = m[2].padStart(2, '0');
+        const year  = m[3];
+        if (month) return `${year}-${month}-${day}`;
+      }
+
+      // Pattern C – ISO-like "2026-09-02"
+      const patternC = /(\d{4})-(\d{2})-(\d{2})/;
+      m = trimmed.match(patternC);
+      if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+
+      return null; // Could not parse
+    }
+
+    // =================================================================
+    //  Data Extraction (Regex for Dime App Screenshots)
+    //
+    //  Expected OCR text patterns from Dime:
+    //    "Buy ASML"  /  "Sell AMD"
+    //    "Completion date   2 Sep 2026"
+    //    "Executed Price   $123.45"   (Buy)
+    //    "Total Credit     $987.65"   (Sell)
+    // =================================================================
+    function extractTradeData(ocrText) {
+      const result = { action: null, symbol: null, trade_date: null, amount: null };
+
+      // --- 1. Action & Ticker ---
+      // Look for "Buy <TICKER>" or "Sell <TICKER>" (case-insensitive)
+      const actionMatch = ocrText.match(/\b(Buy|Sell)\s+([A-Z]{1,5})\b/i);
+      if (actionMatch) {
+        result.action = actionMatch[1].charAt(0).toUpperCase() + actionMatch[1].slice(1).toLowerCase();
+        result.symbol = actionMatch[2].toUpperCase();
+      }
+
+      // --- 2. Date ---
+      // "Completion date" line — tolerate OCR noise with flexible spacing
+      const dateLineMatch = ocrText.match(/[Cc]ompletion\s+[Dd]ate[:\s]*(.+)/i);
+      if (dateLineMatch) {
+        const parsed = parseDateString(dateLineMatch[1]);
+        if (parsed) result.trade_date = parsed;
+      }
+
+      // Fallback: find any date-like string if the above didn't match
+      if (!result.trade_date) {
+        const fallbackDate = ocrText.match(/(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})/);
+        if (fallbackDate) {
+          const parsed = parseDateString(fallbackDate[1]);
+          if (parsed) result.trade_date = parsed;
+        }
+      }
+
+      // --- 3. Amount ---
+      if (result.action === 'Buy') {
+        // Look for "Executed Price" value
+        const priceMatch = ocrText.match(/[Ee]xecuted\s+[Pp]rice[:\s]*[$€£]?\s*([\d,]+\.?\d*)/i);
+        if (priceMatch) {
+          result.amount = parseFloat(priceMatch[1].replace(/,/g, ''));
+        }
+      } else if (result.action === 'Sell') {
+        // Look for "Total Credit" value
+        const creditMatch = ocrText.match(/[Tt]otal\s+[Cc]redit[:\s]*[$€£]?\s*([\d,]+\.?\d*)/i);
+        if (creditMatch) {
+          result.amount = parseFloat(creditMatch[1].replace(/,/g, ''));
+        }
+      }
+
+      // Generic fallback for amount if the specific patterns above didn't match
+      if (result.amount === null) {
+        const amountFallback = ocrText.match(/(?:Price|Amount|Credit|Total)[:\s]*[$€£]?\s*([\d,]+\.\d{2})/i);
+        if (amountFallback) {
+          result.amount = parseFloat(amountFallback[1].replace(/,/g, ''));
+        }
+      }
+
+      return result;
+    }
+
+    // =================================================================
+    //  OCR Processing Queue
+    // =================================================================
+    async function handleFiles(files) {
+      const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+      if (!imageFiles.length) {
+        showToast('No image files selected.', 'error');
+        return;
+      }
+
+      openModal();
+      setProgress(0, 'Initializing OCR engine…');
+
+      const results = [];
+      const total = imageFiles.length;
+
+      // Create a Tesseract worker (reuse for the whole batch)
+      let worker;
+      try {
+        worker = await Tesseract.createWorker('eng', 1, {
+          logger: (info) => {
+            if (info.status === 'recognizing text') {
+              // Compute combined progress across all images
+              const imgPct = info.progress || 0;
+              const currentIdx = results.length;
+              const overallPct = ((currentIdx + imgPct) / total) * 100;
+              setProgress(overallPct, `Recognizing image ${currentIdx + 1} of ${total}… (${Math.round(imgPct * 100)}%)`);
+            }
+          },
+        });
+      } catch (err) {
+        closeModal();
+        showToast('Failed to initialize OCR engine. Check console.', 'error');
+        console.error(err);
+        return;
+      }
+
+      for (let i = 0; i < imageFiles.length; i++) {
+        const file = imageFiles[i];
+        setProgress((i / total) * 100, `Processing image ${i + 1} of ${total}: ${file.name}`);
+
+        try {
+          const { data: { text } } = await worker.recognize(file);
+          const extracted = extractTradeData(text);
+
+          // Validate minimum viable data
+          if (extracted.action && extracted.symbol && extracted.amount !== null) {
+            results.push(extracted);
+            addExtractionEntry(extracted);
+          } else {
+            addExtractionEntry(null, file.name, text);
+          }
+        } catch (err) {
+          console.error(`OCR failed for ${file.name}:`, err);
+          addExtractionEntry(null, file.name);
+        }
+      }
+
+      // Terminate the worker
+      await worker.terminate();
+
+      setProgress(100, 'OCR complete. Syncing with database…');
+
+      // Insert into Supabase
+      if (results.length) {
+        await insertTransactions(results);
+      }
+
+      closeModal();
+      showToast(`Processed ${total} image(s). ${results.length} transaction(s) extracted.`);
+
+      // Reset file input so the same files can be re-uploaded if needed
+      fileInput.value = '';
+
+      // Refresh dashboard
+      await loadDashboard();
+    }
+
+    // =================================================================
+    //  Extraction Log UI
+    // =================================================================
+    function addExtractionEntry(data, fileName, rawText) {
+      extractionSection.style.display = '';
+
+      const el = document.createElement('div');
+
+      if (data) {
+        const cls = data.action.toLowerCase();
+        el.className = `extraction-item ${cls}`;
+        el.innerHTML = `
+          <span class="tag ${cls}">${data.action}</span>
+          <span><strong>${data.symbol}</strong></span>
+          <span>$${data.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+          <span style="color:var(--text-secondary)">${data.trade_date ?? '—'}</span>
+        `;
+      } else {
+        el.className = 'extraction-item error';
+        el.innerHTML = `
+          <span class="tag error-tag">Skip</span>
+          <span style="color:var(--yellow)">Could not extract data from <strong>${fileName ?? 'image'}</strong></span>
+        `;
+      }
+
+      extractionLog.prepend(el);
+    }
+
+    // =================================================================
+    //  Supabase – Insert Transactions
+    // =================================================================
+    async function insertTransactions(records) {
+      try {
+        const rows = records.map(r => ({
+          trade_date: r.trade_date,
+          action: r.action,
+          symbol: r.symbol,
+          amount: r.amount,
+        }));
+
+        const { data, error } = await supabase
+          .from('transactions')
+          .insert(rows);
+
+        if (error) {
+          console.error('Supabase insert error:', error);
+          showToast(`DB Error: ${error.message}`, 'error');
+        } else {
+          showToast(`${rows.length} transaction(s) saved to database.`);
+        }
+      } catch (err) {
+        console.error('Unexpected DB error:', err);
+        showToast('Unexpected error saving to database.', 'error');
+      }
+    }
+
+    // =================================================================
+    //  Supabase – Load All Transactions & Build Dashboard
+    // =================================================================
+    async function loadDashboard() {
+      try {
+        const { data, error } = await supabase
+          .from('transactions')
+          .select('*')
+          .order('trade_date', { ascending: false });
+
+        if (error) {
+          console.error('Supabase fetch error:', error);
+          showToast(`DB Fetch Error: ${error.message}`, 'error');
+          return;
+        }
+
+        renderDashboard(data || []);
+      } catch (err) {
+        console.error('Unexpected error loading dashboard:', err);
+        showToast('Failed to load dashboard data.', 'error');
+      }
+    }
+
+    // =================================================================
+    //  Dashboard Rendering
+    // =================================================================
+    const TAX_RATE = 0.15; // 15 % long-term capital gains estimate
+
+    function renderDashboard(transactions) {
+      if (!transactions.length) {
+        dashboard.innerHTML = `
+          <div class="empty-state">
+            <div class="big-icon">🗂️</div>
+            <p>No transactions found. Upload screenshots to populate the dashboard.</p>
+          </div>`;
+        return;
+      }
+
+      // Group by year → month
+      const grouped = {};
+      for (const tx of transactions) {
+        const d = new Date(tx.trade_date);
+        const year  = d.getFullYear();
+        const month = d.getMonth(); // 0-indexed
+        if (!grouped[year]) grouped[year] = {};
+        if (!grouped[year][month]) grouped[year][month] = [];
+        grouped[year][month].push(tx);
+      }
+
+      const years = Object.keys(grouped).sort((a, b) => b - a);
+
+      let html = '';
+      for (const year of years) {
+        const months = grouped[year];
+        let yearBuys  = 0;
+        let yearSells = 0;
+
+        // First pass: compute year totals
+        for (const monthTxs of Object.values(months)) {
+          for (const tx of monthTxs) {
+            if (tx.action === 'Buy') yearBuys += Number(tx.amount);
+            else yearSells += Number(tx.amount);
+          }
+        }
+
+        const yearNet = yearSells - yearBuys;
+        const estimatedTax = yearNet > 0 ? yearNet * TAX_RATE : 0;
+
+        html += `<div class="year-group">`;
+        html += `<div class="year-header">
+                    <span>📅 ${year}</span>
+                    <span class="tax-badge">Est. Tax @ ${(TAX_RATE * 100).toFixed(0)}%: $${estimatedTax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  </div>`;
+        html += `<div class="summary-cards">
+                    <div class="summary-card">
+                      <div class="label">Total Spent (Buys)</div>
+                      <div class="value red">$${yearBuys.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                    </div>
+                    <div class="summary-card">
+                      <div class="label">Total Received (Sells)</div>
+                      <div class="value green">$${yearSells.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                    </div>
+                    <div class="summary-card">
+                      <div class="label">Net Profit / Loss</div>
+                      <div class="value ${yearNet >= 0 ? 'green' : 'red'}">
+                        ${yearNet >= 0 ? '+' : ''}$${yearNet.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                    <div class="summary-card">
+                      <div class="label">Estimated Tax Liability</div>
+                      <div class="value accent">$${estimatedTax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                    </div>
+                  </div>`;
+
+        // Per-month breakdown
+        const monthNames = ['January','February','March','April','May','June',
+                            'July','August','September','October','November','December'];
+        const sortedMonths = Object.keys(months).sort((a, b) => b - a);
+
+        for (const mi of sortedMonths) {
+          const txs = months[mi];
+          const mBuys  = txs.filter(t => t.action === 'Buy').reduce((s, t) => s + Number(t.amount), 0);
+          const mSells = txs.filter(t => t.action === 'Sell').reduce((s, t) => s + Number(t.amount), 0);
+          const mNet   = mSells - mBuys;
+
+          html += `<div class="month-label">${monthNames[mi]} — 
+                      <span style="color:var(--green)">+$${mSells.toLocaleString(undefined,{minimumFractionDigits:2})}</span> /
+                      <span style="color:var(--red)">-$${mBuys.toLocaleString(undefined,{minimumFractionDigits:2})}</span> =
+                      <span style="color:${mNet >= 0 ? 'var(--green)' : 'var(--red)'}">${mNet >= 0 ? '+' : ''}$${mNet.toLocaleString(undefined,{minimumFractionDigits:2})}</span>
+                    </div>`;
+
+          html += `<div class="month-table-wrapper"><table class="month-table">
+                    <thead><tr>
+                      <th>Date</th><th>Action</th><th>Symbol</th><th>Amount</th>
+                    </tr></thead><tbody>`;
+
+          for (const tx of txs) {
+            const actionCls = tx.action === 'Buy' ? 'red' : 'green';
+            html += `<tr>
+                        <td>${tx.trade_date}</td>
+                        <td><span style="color:var(--${actionCls});font-weight:600">${tx.action}</span></td>
+                        <td>${tx.symbol}</td>
+                        <td>$${Number(tx.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                      </tr>`;
+          }
+
+          html += `</tbody></table></div>`;
+        }
+
+        html += `</div>`; // .year-group
+      }
+
+      dashboard.innerHTML = html;
+    }
+
+    // =================================================================
+    //  Initial Load
+    // =================================================================
+    (async () => {
+      await loadDashboard();
+    })();
+  </script>
+
+</body>
+</html>
